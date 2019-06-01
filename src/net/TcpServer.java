@@ -5,7 +5,6 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 //tcp服务器，单线程和多线程
 public class TcpServer {
@@ -14,18 +13,23 @@ public class TcpServer {
 
     // 监测当前TCP连接数量
 //    private static AtomicInteger count = new AtomicInteger(0);
-
-
+    private static Set<String> macSet;
+    private static ConcurrentHashMap<String, Boolean> macOnlineMap;
     // 存储UDP端口与mac地址的映射
     private static final ConcurrentHashMap<Integer, String> portMacMap = new ConcurrentHashMap<>();
 
 
     public static void main(String[] args) {
-        portList.add(6787);
-        portList.add(6788);
-        portList.add(6789);
-        portList.add(6790);
-        portList.add(6791);
+        macSet = new HashSet<>();
+        macOnlineMap = new ConcurrentHashMap<>();
+        macSet.add("A4:50:46:18:ED:05");
+        macSet.add("B7:2D:1F:21:02:B5");
+        macSet.add("F4:5B:00:2E:EB:83");
+        macSet.add("E8:ED:39:DE:3D:BF");
+        macSet.add("56:EF:87:82:0F:F6");
+        for (String mac : macSet) {
+            macOnlineMap.put(mac, false);
+        }
         for (Integer port : portList) {
             portMacMap.put(port, "0");
         }
@@ -83,6 +87,7 @@ public class TcpServer {
             String mac = null;
             System.out.println("检测到： " + socket.getInetAddress() + ":" + socket.getPort() + " 接入");
             while (isRun && run && socket.isConnected() && !socket.isClosed() && !socket.isInputShutdown()) {
+                String clientMac = null;
                 try {
                     InputStream is = socket.getInputStream();
                     OutputStream os = socket.getOutputStream();
@@ -90,24 +95,16 @@ public class TcpServer {
                     if (is.available() > 0) {
                         String line = null;
                         while ((line = br.readLine()) != null) {
-//                            if (!"heart".equalsIgnoreCase(line)) {
-//                                System.out.println("收到消息: " + line);
-//                            }
+                            System.out.println("line: " + line);
                             if ("quit".equalsIgnoreCase(line.substring(0, 4))) {
-                                disconnect(Integer.parseInt(line.substring(4)));
+                                disconnect(line.substring(4));
                                 break;
-                            } else if ("map".equalsIgnoreCase(line.substring(0,3))) {
-                                sendMap(os, Integer.parseInt(line.substring(3)));
+                            } else if ("applyMac".equalsIgnoreCase(line)) {
+                                clientMac = alignMap(os);
                             } else if ("heart".equalsIgnoreCase(line)) {
                                 sendHeart(os);
-                            } else {
-                                String[] strings = line.split("\\|");
-                                udpPort = Integer.parseInt(strings[0]);
-                                mac = strings[1];
-                                portList.add(udpPort);
-                                portMacMap.put(udpPort, mac);
-//                                count.incrementAndGet();
-//                                System.out.println("现共有" + count + "条Tcp连接");
+                            } else if ("queryMap".equalsIgnoreCase(line)){
+                                sendMap(os);
                             }
                         }
                     } else {
@@ -115,8 +112,23 @@ public class TcpServer {
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
-                    disconnect(udpPort);
+                    disconnect(clientMac);
                 }
+            }
+        }
+
+        private void sendMap(OutputStream os) {
+            try {
+                BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(os));
+                for (Map.Entry<String, Boolean> entry : macOnlineMap.entrySet()) {
+                    bw.write(entry.getKey() + "|" + entry.getValue());
+                    bw.newLine();
+                }
+                bw.write("mapDone");
+                bw.newLine();
+                bw.flush();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
         }
 
@@ -132,16 +144,13 @@ public class TcpServer {
         }
 
 
-        private void disconnect(int udpPort) {
+        private void disconnect(String mac) {
             run = false;
-            if (!portList.contains(udpPort)) {
+            if (!macSet.contains(mac)) {
                 return;
             }
-            System.out.println(portMacMap.get(udpPort) + " 断开连接");
-            portMacMap.put(udpPort, "0");
-            portList.remove((Integer) udpPort);
-//            count.decrementAndGet();
-//            System.out.println("现共有" + count + "条Tcp连接");
+            System.out.println(mac + " 断开连接");
+            macOnlineMap.put(mac, false);
             try {
                 if (socket != null) {
                     socket.close();
@@ -151,24 +160,25 @@ public class TcpServer {
             }
         }
 
-        private void sendMap(OutputStream os, int udpPort) {
+        private String alignMap(OutputStream os) {
             BufferedWriter bw = null;
             try {
-                System.out.println(portMacMap);
+                String mac = null;
                 bw = new BufferedWriter(new OutputStreamWriter(os));
-                for (Map.Entry<Integer, String> entry : portMacMap.entrySet()) {
-                    if (entry.getKey() != udpPort) {
-                        String msg = entry.getKey() + "|" + entry.getValue();
-                        bw.write(msg);
+                for (Map.Entry<String, Boolean> entry : macOnlineMap.entrySet()) {
+                    if (!entry.getValue()) {
+                        macOnlineMap.put(entry.getKey(), true);
+                        mac = entry.getKey();
+                        bw.write(mac);
                         bw.newLine();
+                        break;
                     }
                 }
-                bw.write("mapDone");
-                bw.newLine();
-                bw.flush();
-//                System.out.println("sendMap");
+                System.out.println(macOnlineMap);
+                return mac;
             } catch (IOException e) {
                 e.printStackTrace();
+                return null;
             }
         }
 

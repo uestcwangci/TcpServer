@@ -5,9 +5,7 @@ import protocol.EmergencyProtocol;
 import protocol.UnPackEmergencyProtocol;
 
 import java.io.*;
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.Socket;
+import java.net.*;
 import java.util.Arrays;
 
 public class Client {
@@ -22,23 +20,33 @@ public class Client {
 
     // UDP
     private boolean isUdpRun = true;
-    public int udpPort = 6787;//数据监听绑定端口
-    private DatagramSocket udpSocket = null;
+    private MulticastSocket multicastSocket = null;
+    private int udpPort = 8888; // 组播侦听端口
+    private String mulIp = "244.0.0.12";//组播地址 使用D类地址
+    private byte[] buffer; // 缓存
+
+
 
 
     private long lastSendTime; //最后一次发送数据的时间
 
 
-    public Client(String tcpServer, int tcpPort, String mac, int udpPort) {
+    public Client(String tcpServer, int tcpPort) {
         this.serverIP = tcpServer;
         this.serverPort = tcpPort;
         this.mac = mac;
-        this.udpPort = udpPort;
+        this.buffer = new byte[4096];
+
     }
 
     public void start() {
         tcpStart();
         udpStart();
+    }
+
+    public void stop() {
+        tcpClose();
+        udpClose();
     }
 
 
@@ -116,7 +124,8 @@ public class Client {
                         String line = null;
                         while ((line = br.readLine()) != null) {
                             // ignore
-//                            System.out.println("心跳接收：\t" + line);
+
+                            System.out.println("心跳接收：\t" + line);
                         }
                     } else {
                         Thread.sleep(10);
@@ -152,55 +161,69 @@ public class Client {
         new Thread(new Runnable() {
             @Override
             public void run() {
-                System.out.println(mac + " UDP开始监听");
-                runUdpClient();
+                // 接收数据时需要指定监听的端口号
+                try {
+                    multicastSocket = new MulticastSocket(udpPort);
+                    // 创建组播ID地址
+                    InetAddress address = InetAddress.getByName(mulIp);
+                    // 加入地址
+                    multicastSocket.joinGroup(address);
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+                isUdpRun = true;
+                if (multicastSocket == null) {
+                    return;
+                }
+                DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length);
+                while (isUdpRun) {
+                    try {
+                        // 接收数据，同样会进入阻塞状态
+                        multicastSocket.receive(datagramPacket);
+                        System.out.println("UDP from " + datagramPacket.getAddress().getHostAddress() + " : " + datagramPacket.getPort());
+                        byte[] receiveBytes = datagramPacket.getData();
+                        EmergencyProtocol protocol = UnPackEmergencyProtocol.unPack(receiveBytes,
+                                datagramPacket.getOffset());
+                        if (protocol != null && protocol.getBody().getT() instanceof BaseMessage) {
+                            BaseMessage baseMessage = (BaseMessage) protocol.getBody().getT();
+                            switch ((baseMessage.getDataType())) {
+                                case 0x01:
+                                    System.out.println(mac + " 收到音频消息: ");
+                                    break;
+                                case 0x02:
+                                    System.out.println("收到视频消息");
+                                    break;
+                                case 0x03:
+                                    System.out.println("收到文字消息: " + new String(baseMessage.getData()));
+                                    break;
+                                case 0x04:
+                                    System.out.println(mac + " 收到图片消息");
+                                    break;
+                                default:
+                                    System.out.println("收到未知消息");
+                                    break;
+                            }
+                        }
+                    } catch (IOException e) {
+                        // TODO Auto-generated catch block
+                        e.printStackTrace();
+                    } finally {
+                        try {
+                            if (multicastSocket != null) {
+                                multicastSocket.leaveGroup(InetAddress.getByName(mulIp));
+                                multicastSocket.close();
+                            }
+                        } catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }
             }
         }).start();
     }
 
-
-    private void runUdpClient() {
-        try {
-            byte[] receiveBuffer = new byte[4096];//数据缓冲区
-            udpSocket = new DatagramSocket(udpPort);//绑定端口进行数据监听
-            DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);//数据接收包囊
-            while (isUdpRun) {
-                udpSocket.receive(receivePacket);//接收数据.阻塞式
-                System.out.println("UDP from " + receivePacket.getAddress().getHostAddress() + " : " + receivePacket.getPort());
-                byte[] receiveBytes = receivePacket.getData();
-//                System.out.println(receivePacket.getLength());
-                EmergencyProtocol protocol = UnPackEmergencyProtocol.unPack(receiveBytes,
-                        receivePacket.getOffset());
-//                System.out.println(protocol);
-                if (protocol != null && protocol.getBody().getT() instanceof BaseMessage) {
-                    BaseMessage baseMessage = (BaseMessage) protocol.getBody().getT();
-                    switch (baseMessage.getDataType()) {
-                        case 0x01:
-                            System.out.println("收到音频消息");
-
-                            break;
-                        case 0x02:
-                            System.out.println("收到视频消息");
-                            break;
-                        case 0x03:
-                            System.out.println(mac + " 收到文字消息: " + new String(baseMessage.getData()));
-                            break;
-                        case 0x04:
-                            System.out.println("收到图片消息");
-                            break;
-                        default:
-                            break;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
-
     public void udpClose() {
         isUdpRun = false;
-        udpSocket.close();
         System.out.println("udp客户端关闭");
     }
 
