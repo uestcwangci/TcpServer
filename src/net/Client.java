@@ -168,15 +168,16 @@ public class Client {
                 udpSocket.receive(receivePacket);//接收数据.阻塞式
                 System.out.println("UDP from " + receivePacket.getAddress().getHostAddress() + " : " + receivePacket.getPort());
                 byte[] receiveBytes = receivePacket.getData();
-                System.out.println(receivePacket.getLength());
+//                System.out.println(receivePacket.getLength());
                 EmergencyProtocol protocol = UnPackEmergencyProtocol.unPack(receiveBytes,
                         receivePacket.getOffset());
-                System.out.println(protocol);
+//                System.out.println(protocol);
                 if (protocol != null && protocol.getBody().getT() instanceof BaseMessage) {
                     BaseMessage baseMessage = (BaseMessage) protocol.getBody().getT();
-                    switch (((BaseMessage) protocol.getBody().getT()).getDataType()) {
+                    switch (baseMessage.getDataType()) {
                         case 0x01:
                             System.out.println("收到音频消息");
+
                             break;
                         case 0x02:
                             System.out.println("收到视频消息");
