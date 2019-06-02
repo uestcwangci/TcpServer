@@ -22,10 +22,7 @@ public class Test {
 //        System.out.println(Long.valueOf(a).intValue());
 //        System.out.println(Long.valueOf(a % 100000000).intValue());
 
-        String a = "stop";
-        byte[] bytes = a.getBytes();
-        System.out.println(Arrays.toString(bytes));
-        String s = new String(bytes, 0, 4);
-        System.out.println(s);
+        String a = "/192.168.0.161";
+        System.out.println(a.replaceFirst("/", ""));
     }
 }

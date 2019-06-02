@@ -35,8 +35,8 @@ public class Client {
 
     private boolean isUdpRun = true;
     private MulticastSocket multicastSocket = null;
-    private int udpPort = 10012; // 组播侦听端口
-    private String mulIp = "239.0.1.25";//组播地址 使用D类地址
+    private int udpPort = 9457; // 组播侦听端口
+    private String mulIp = "239.0.0.3";//组播地址 使用D类地址
     private static final int BUFF_SIZE = 4096;
 
 
@@ -203,18 +203,14 @@ public class Client {
                     e.printStackTrace();
                 }
                 isUdpRun = true;
-                if (multicastSocket == null)
-                    return;
+
                 DatagramPacket datagramPacket = new DatagramPacket(new byte[BUFF_SIZE], BUFF_SIZE);
-                while (isUdpRun) {
+                while (isUdpRun && multicastSocket != null && !multicastSocket.isClosed()) {
+
                     try {
                         // 接收数据，同样会进入阻塞状态
                         System.out.println("准备接收");
-                        if (multicastSocket != null) {
-                            multicastSocket.receive(datagramPacket);
-                        } else {
-                            System.out.println("socket is null");
-                        }
+                        multicastSocket.receive(datagramPacket);
                         System.out.println("UDP from " + datagramPacket.getAddress().getHostAddress() + " : " + datagramPacket.getPort());
                         byte[] receiveBytes = datagramPacket.getData();
                         EmergencyProtocol protocol = UnPackEmergencyProtocol.unPack(receiveBytes,
@@ -242,15 +238,6 @@ public class Client {
                     } catch (IOException e) {
                         // TODO Auto-generated catch block
                         e.printStackTrace();
-                    } finally {
-                        try {
-                            if (multicastSocket != null) {
-                                multicastSocket.leaveGroup(InetAddress.getByName(mulIp));
-                                multicastSocket.close();
-                            }
-                        } catch (IOException e) {
-                            e.printStackTrace();
-                        }
                     }
                 }
             }

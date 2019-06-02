@@ -10,7 +10,7 @@ public class Main {
             Client client2 = new Client("localhost", 10041);
             Client client3 = new Client("localhost", 10041);
             Client client4 = new Client("localhost", 10041);
-            Client client5 = new Client("192.168.78.10", 10041);
+            Client client5 = new Client("192.168.0.116", 10041);
 
 //            client1.start();
 //            client2.start();

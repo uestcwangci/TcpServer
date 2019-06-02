@@ -9,29 +9,24 @@ import java.util.concurrent.ConcurrentHashMap;
 //tcp服务器，单线程和多线程
 public class TcpServer {
     // 存储设备的UDP监听端口
-    private static List<Integer> portList = new ArrayList<>();
 
     // 监测当前TCP连接数量
 //    private static AtomicInteger count = new AtomicInteger(0);
     private static Set<String> macSet;
-    private static ConcurrentHashMap<String, Boolean> macOnlineMap;
     // 存储UDP端口与mac地址的映射
-    private static final ConcurrentHashMap<Integer, String> portMacMap = new ConcurrentHashMap<>();
+
+    private static  ConcurrentHashMap<String, String> mac2IPandPortMap = new ConcurrentHashMap<>();
 
 
     public static void main(String[] args) {
         macSet = new HashSet<>();
-        macOnlineMap = new ConcurrentHashMap<>();
-        macSet.add("A4:50:46:18:ED:05");
-        macSet.add("B7:2D:1F:21:02:B5");
+        macSet.add("A4:50:46:18:ED:05"); // mix2s
+        macSet.add("9C:2E:A1:C6:93:B3"); // mix2
         macSet.add("F4:5B:00:2E:EB:83");
         macSet.add("E8:ED:39:DE:3D:BF");
         macSet.add("56:EF:87:82:0F:F6");
         for (String mac : macSet) {
-            macOnlineMap.put(mac, false);
-        }
-        for (Integer port : portList) {
-            portMacMap.put(port, "0");
+            mac2IPandPortMap.put(mac, "0|0");
         }
 
         new TcpServer().start(10041);
@@ -83,8 +78,6 @@ public class TcpServer {
         //线程运行实体
         @Override
         public void run() {
-            int udpPort = 0;
-            String mac = null;
             System.out.println("检测到： " + socket.getInetAddress() + ":" + socket.getPort() + " 接入");
             while (isRun && run && socket.isConnected() && !socket.isClosed() && !socket.isInputShutdown()) {
                 String clientMac = null;
@@ -99,12 +92,13 @@ public class TcpServer {
                             if ("quit".equalsIgnoreCase(line.substring(0, 4))) {
                                 disconnect(line.substring(4));
                                 break;
-                            } else if ("applyMac".equalsIgnoreCase(line)) {
-                                clientMac = alignMap(os);
                             } else if ("heart".equalsIgnoreCase(line)) {
                                 sendHeart(os);
-                            } else if ("queryMap".equalsIgnoreCase(line)){
+                            } else if ("queryMap".equalsIgnoreCase(line)) {
                                 sendMap(os);
+                            } else {
+                                // 收到mac，ip，port
+                                updateMap(line);
                             }
                         }
                     } else {
@@ -117,10 +111,23 @@ public class TcpServer {
             }
         }
 
+        private void updateMap(String line) {
+            String[] strings = line.split("\\|");
+            String mac = strings[0];
+            String ip = strings[1];
+            String udpPort = strings[2];
+            for (Map.Entry<String, String> entry : mac2IPandPortMap.entrySet()) {
+                if (entry.getKey().equalsIgnoreCase(mac)) {
+                    mac2IPandPortMap.put(mac, ip + "|" + udpPort);
+                    break;
+                }
+            }
+        }
+
         private void sendMap(OutputStream os) {
             try {
                 BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(os));
-                for (Map.Entry<String, Boolean> entry : macOnlineMap.entrySet()) {
+                for (Map.Entry<String, String> entry : mac2IPandPortMap.entrySet()) {
                     bw.write(entry.getKey() + "|" + entry.getValue());
                     bw.newLine();
                 }
@@ -150,7 +157,7 @@ public class TcpServer {
                 return;
             }
             System.out.println(mac + " 断开连接");
-            macOnlineMap.put(mac, false);
+            mac2IPandPortMap.put(mac, "0|0");
             try {
                 if (socket != null) {
                     socket.close();
@@ -160,28 +167,6 @@ public class TcpServer {
             }
         }
 
-        private String alignMap(OutputStream os) {
-            BufferedWriter bw = null;
-            try {
-                String mac = null;
-                bw = new BufferedWriter(new OutputStreamWriter(os));
-                for (Map.Entry<String, Boolean> entry : macOnlineMap.entrySet()) {
-                    if (!entry.getValue()) {
-                        macOnlineMap.put(entry.getKey(), true);
-                        mac = entry.getKey();
-                        bw.write(mac);
-                        bw.newLine();
-                        bw.flush();
-                        break;
-                    }
-                }
-                System.out.println(macOnlineMap);
-                return mac;
-            } catch (IOException e) {
-                e.printStackTrace();
-                return null;
-            }
-        }
 
 
 
