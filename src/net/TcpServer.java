@@ -95,7 +95,7 @@ public class TcpServer {
                     if (is.available() > 0) {
                         String line = null;
                         while ((line = br.readLine()) != null) {
-                            System.out.println("line: " + line);
+//                            System.out.println("line: " + line);
                             if ("quit".equalsIgnoreCase(line.substring(0, 4))) {
                                 disconnect(line.substring(4));
                                 break;
@@ -171,6 +171,7 @@ public class TcpServer {
                         mac = entry.getKey();
                         bw.write(mac);
                         bw.newLine();
+                        bw.flush();
                         break;
                     }
                 }

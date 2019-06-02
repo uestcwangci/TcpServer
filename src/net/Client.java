@@ -1,16 +1,27 @@
 package net;
 
+
+
+
 import message.BaseMessage;
 import protocol.EmergencyProtocol;
 import protocol.UnPackEmergencyProtocol;
 
 import java.io.*;
-import java.net.*;
-import java.util.Arrays;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.MulticastSocket;
+import java.net.Socket;
 
 public class Client {
+    private static final String TAG = "waibao";
+    private static final int RECEIVE_TEXT = 639;
+    private static final int RECEIVE_IMG = 640;
+    private static final int RECEIVE_AUD = 641;
+    private static final int CANCEL_AUD = 444;
     // TCP
-    private String serverIP = "192.168.0.116";
+    private String serverIP;
     private int serverPort = 10041;
     private Socket clientSocket = null;
     private InputStream is = null;
@@ -18,25 +29,30 @@ public class Client {
     private String mac;
     private boolean isTcpRun = false;// 连接状态
 
+
+
     // UDP
+
     private boolean isUdpRun = true;
     private MulticastSocket multicastSocket = null;
-    private int udpPort = 8888; // 组播侦听端口
-    private String mulIp = "244.0.0.12";//组播地址 使用D类地址
-    private byte[] buffer; // 缓存
-
+    private int udpPort = 10012; // 组播侦听端口
+    private String mulIp = "239.0.1.25";//组播地址 使用D类地址
+    private static final int BUFF_SIZE = 4096;
 
 
 
     private long lastSendTime; //最后一次发送数据的时间
+    private InetAddress address;
 
 
     public Client(String tcpServer, int tcpPort) {
         this.serverIP = tcpServer;
         this.serverPort = tcpPort;
-        this.mac = mac;
-        this.buffer = new byte[4096];
+    }
 
+    public void stop() {
+        tcpClose();
+        udpClose();
     }
 
     public void start() {
@@ -44,10 +60,8 @@ public class Client {
         udpStart();
     }
 
-    public void stop() {
-        tcpClose();
-        udpClose();
-    }
+
+
 
 
     private void tcpStart(){
@@ -64,9 +78,9 @@ public class Client {
                     lastSendTime = System.currentTimeMillis();
                     isTcpRun = true;
                     clientSocket.setKeepAlive(true);
-                    System.out.println(mac + " TCP连接成功");
+                    System.out.println("TCP连接成功");
                     BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(os));
-                    bw.write(udpPort + "|" + mac);
+                    bw.write("applyMac");
                     bw.newLine();
                     bw.flush();
                     new Thread(new KeepAliveWatchDog()).start();  //保持长连接的线程，每隔5秒项服务器发一个一个保持连接的心跳消息
@@ -124,8 +138,10 @@ public class Client {
                         String line = null;
                         while ((line = br.readLine()) != null) {
                             // ignore
-
-                            System.out.println("心跳接收：\t" + line);
+                            if (!"heart".equalsIgnoreCase(line)) {
+                                mac = line;
+                            }
+//                            System.out.println("心跳接收：\t" + line);
                         }
                     } else {
                         Thread.sleep(10);
@@ -140,21 +156,35 @@ public class Client {
 
 
     public void tcpClose() {
-        try {
-            System.out.println(mac + " 断开连接");
-            BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(os));
-            bw.write("quit" + udpPort);
-            bw.newLine();
-            bw.flush();
-            if (clientSocket != null) {
-                clientSocket.close();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    System.out.println(mac + " 断开连接");
+                    if (os != null) {
+                        BufferedWriter bw = new BufferedWriter(new OutputStreamWriter(os));
+                        bw.write("quit" + mac);
+                        bw.newLine();
+                        bw.flush();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                } finally {
+                    try {
+                        if (clientSocket != null) {
+                            clientSocket.close();
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                    if (isTcpRun) {
+                        isTcpRun = false;
+                    }
+                }
             }
-            if (isTcpRun) {
-                isTcpRun = false;
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
+        }).start();
+
+
     }
 
     public void udpStart() {
@@ -165,21 +195,26 @@ public class Client {
                 try {
                     multicastSocket = new MulticastSocket(udpPort);
                     // 创建组播ID地址
-                    InetAddress address = InetAddress.getByName(mulIp);
+                    address = InetAddress.getByName(mulIp);
                     // 加入地址
                     multicastSocket.joinGroup(address);
+                    System.out.println("加入组播");
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
                 isUdpRun = true;
-                if (multicastSocket == null) {
+                if (multicastSocket == null)
                     return;
-                }
-                DatagramPacket datagramPacket = new DatagramPacket(buffer, buffer.length);
+                DatagramPacket datagramPacket = new DatagramPacket(new byte[BUFF_SIZE], BUFF_SIZE);
                 while (isUdpRun) {
                     try {
                         // 接收数据，同样会进入阻塞状态
-                        multicastSocket.receive(datagramPacket);
+                        System.out.println("准备接收");
+                        if (multicastSocket != null) {
+                            multicastSocket.receive(datagramPacket);
+                        } else {
+                            System.out.println("socket is null");
+                        }
                         System.out.println("UDP from " + datagramPacket.getAddress().getHostAddress() + " : " + datagramPacket.getPort());
                         byte[] receiveBytes = datagramPacket.getData();
                         EmergencyProtocol protocol = UnPackEmergencyProtocol.unPack(receiveBytes,
@@ -188,13 +223,13 @@ public class Client {
                             BaseMessage baseMessage = (BaseMessage) protocol.getBody().getT();
                             switch ((baseMessage.getDataType())) {
                                 case 0x01:
-                                    System.out.println(mac + " 收到音频消息: ");
+                                    System.out.println(mac + " 收到音频消息");
                                     break;
                                 case 0x02:
                                     System.out.println("收到视频消息");
                                     break;
                                 case 0x03:
-                                    System.out.println("收到文字消息: " + new String(baseMessage.getData()));
+                                    System.out.println(mac + " 收到文字消息: " + new String(baseMessage.getData()));
                                     break;
                                 case 0x04:
                                     System.out.println(mac + " 收到图片消息");
@@ -222,9 +257,11 @@ public class Client {
         }).start();
     }
 
+
+
     public void udpClose() {
         isUdpRun = false;
-        System.out.println("udp客户端关闭");
+        System.out.println("udp退出监听");
     }
 
 }
